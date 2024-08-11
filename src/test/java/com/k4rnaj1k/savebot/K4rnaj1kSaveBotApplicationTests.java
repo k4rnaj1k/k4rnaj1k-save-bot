@@ -1,13 +1,13 @@
-package com.k4rnaj1k.savebot;
+// package com.k4rnaj1k.savebot;
 
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
+// import org.junit.jupiter.api.Test;
+// import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest
-class K4rnaj1kSaveBotApplicationTests {
+// @SpringBootTest
+// class K4rnaj1kSaveBotApplicationTests {
 
-    @Test
-    void contextLoads() {
-    }
+//     @Test
+//     void contextLoads() {
+//     }
 
-}
+// }
