@@ -1,5 +1,5 @@
 # Use the official Maven image as the base image
-FROM maven:3.8.7-openjdk-17-slim AS build
+FROM maven:3.9.8-eclipse-temurin-22-alpine AS build
 
 # Set the working directory inside the container
 WORKDIR /app
