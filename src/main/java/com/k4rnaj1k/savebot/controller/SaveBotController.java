@@ -53,7 +53,7 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
 
     public SaveBotController(VideoService videoService, WebClient cobaltWebClient,
             @Value("${savebot.app.bot-token}") String botToken, UserRepository userRepository,
-            FileRepository fileRepository, QueryRepository queryRepository, @Value("${savebot.app.bot-token}") String placeholderVideoId) {
+            FileRepository fileRepository, QueryRepository queryRepository, @Value("${savebot.app.placeholder-video-id}") String placeholderVideoId) {
         this.botToken = botToken;
         telegramClient = new OkHttpTelegramClient(botToken);
         this.videoService = videoService;
