@@ -1,6 +1,7 @@
 package com.k4rnaj1k.savebot.service;
 
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -27,9 +28,10 @@ public class VideoService {
                 .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
                 .toEntity(CobaltResponse.class).block().getBody();
-        System.out.println(response.getText());
         return response;
     }
 
-    
+    public void downloadAndSendVideo(String url) {
+
+    }
 }

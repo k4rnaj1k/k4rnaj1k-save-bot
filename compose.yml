@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    container_name: downloader_bot
+    depends_on:
+      - mongo
+    environment:
+      SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/mydatabase
+  
+  mongo:
+    image: mongo:6.0
+    container_name: mongodb

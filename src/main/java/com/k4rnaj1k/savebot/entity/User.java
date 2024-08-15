@@ -11,7 +11,7 @@ import org.springframework.data.annotation.Id;
 public class User {
 
     @Id
-    private String chatId;
+    private Long userId;
 
-    private String username;
+    private String userName;
 }
