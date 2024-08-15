@@ -1,6 +1,7 @@
 package com.k4rnaj1k.savebot.controller;
 
 import java.io.SequenceInputStream;
+import java.net.URI;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -145,13 +146,13 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
         if (fileRepository.existsById(query)) {
             return fileRepository.findById(query).orElseThrow().getFileId();
         }
-        String uri = videoService.getOutputStream(query).getUrl();
+        URI uri = videoService.getOutputStream(query).getUrl();
 
         Flux<DataBuffer> videoStream = cobaltWebClient.get().uri(uri).retrieve().bodyToFlux(DataBuffer.class);
         InputFile videoFile = new InputFile(videoStream.map(b -> b.asInputStream(true))
                 .reduce(SequenceInputStream::new).block(), "downloaded_video.mp4");
 
-        SendVideo sendVideo = SendVideo.builder().chatId("-1002165579960").video(videoFile).caption(uri).build();
+        SendVideo sendVideo = SendVideo.builder().chatId("-1002165579960").video(videoFile).caption(uri.toString()).build();
         String fileId = telegramClient.execute(sendVideo).getVideo().getFileId();
         fileRepository.save(FileRef.builder().url(query).fileId(fileId).build());
         return fileId;
