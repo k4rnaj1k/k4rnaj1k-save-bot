@@ -28,6 +28,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
+import com.k4rnaj1k.savebot.entity.FileRef;
 import com.k4rnaj1k.savebot.entity.InlineQueryRef;
 import com.k4rnaj1k.savebot.entity.User;
 import com.k4rnaj1k.savebot.repository.FileRepository;
@@ -52,7 +53,7 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
 
     public SaveBotController(VideoService videoService, WebClient cobaltWebClient,
             @Value("${savebot.app.bot-token}") String botToken, UserRepository userRepository,
-            FileRepository fileRepository, QueryRepository queryRepository, String placeholderVideoId) {
+            FileRepository fileRepository, QueryRepository queryRepository, @Value("${savebot.app.bot-token}") String placeholderVideoId) {
         this.botToken = botToken;
         telegramClient = new OkHttpTelegramClient(botToken);
         this.videoService = videoService;
@@ -141,6 +142,9 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
     }
 
     private String uploadVideo(String query) throws TelegramApiException {
+        if (fileRepository.existsById(query)) {
+            return fileRepository.findById(query).orElseThrow().getFileId();
+        }
         String uri = videoService.getOutputStream(query).getUrl();
 
         Flux<DataBuffer> videoStream = cobaltWebClient.get().uri(uri).retrieve().bodyToFlux(DataBuffer.class);
@@ -149,6 +153,7 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
 
         SendVideo sendVideo = SendVideo.builder().chatId("-1002165579960").video(videoFile).caption(uri).build();
         String fileId = telegramClient.execute(sendVideo).getVideo().getFileId();
+        fileRepository.save(FileRef.builder().url(query).fileId(fileId).build());
         return fileId;
     }
 
