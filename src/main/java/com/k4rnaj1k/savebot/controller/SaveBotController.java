@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException.BadRequest;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsumer;
 import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
@@ -54,7 +55,8 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
 
     public SaveBotController(VideoService videoService, WebClient cobaltWebClient,
             @Value("${savebot.app.bot-token}") String botToken, UserRepository userRepository,
-            FileRepository fileRepository, QueryRepository queryRepository, @Value("${savebot.app.placeholder-video-id}") String placeholderVideoId) {
+            FileRepository fileRepository, QueryRepository queryRepository,
+            @Value("${savebot.app.placeholder-video-id}") String placeholderVideoId) {
         this.botToken = botToken;
         telegramClient = new OkHttpTelegramClient(botToken);
         this.videoService = videoService;
@@ -143,19 +145,25 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
     }
 
     private String uploadVideo(String query) throws TelegramApiException {
-        if (fileRepository.existsById(query)) {
-            return fileRepository.findById(query).orElseThrow().getFileId();
+        try {
+            if (fileRepository.existsById(query)) {
+                return fileRepository.findById(query).orElseThrow().getFileId();
+            }
+            URI uri = videoService.getOutputStream(query).getUrl();
+
+            Flux<DataBuffer> videoStream = cobaltWebClient.get().uri(uri).retrieve().bodyToFlux(DataBuffer.class);
+            InputFile videoFile = new InputFile(videoStream.map(b -> b.asInputStream(true))
+                    .reduce(SequenceInputStream::new).block(), "downloaded_video.mp4");
+
+            SendVideo sendVideo = SendVideo.builder().chatId("-1002165579960").video(videoFile).caption(uri.toString())
+                    .build();
+            String fileId = telegramClient.execute(sendVideo).getVideo().getFileId();
+            fileRepository.save(FileRef.builder().url(query).fileId(fileId).build());
+            return fileId;
+        } catch (BadRequest e) {
+            log.error(e.getResponseBodyAsString());
+            throw new TelegramApiException();
         }
-        URI uri = videoService.getOutputStream(query).getUrl();
-
-        Flux<DataBuffer> videoStream = cobaltWebClient.get().uri(uri).retrieve().bodyToFlux(DataBuffer.class);
-        InputFile videoFile = new InputFile(videoStream.map(b -> b.asInputStream(true))
-                .reduce(SequenceInputStream::new).block(), "downloaded_video.mp4");
-
-        SendVideo sendVideo = SendVideo.builder().chatId("-1002165579960").video(videoFile).caption(uri.toString()).build();
-        String fileId = telegramClient.execute(sendVideo).getVideo().getFileId();
-        fileRepository.save(FileRef.builder().url(query).fileId(fileId).build());
-        return fileId;
     }
 
     @Override
