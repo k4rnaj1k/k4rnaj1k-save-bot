@@ -1,5 +1,7 @@
 package com.k4rnaj1k.savebot.controller;
 
+import java.io.File;
+import java.io.IOException;
 import java.io.SequenceInputStream;
 import java.net.URI;
 import java.util.UUID;
@@ -14,6 +16,7 @@ import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsume
 import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.AnswerInlineQuery;
+import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendVideo;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageMedia;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
@@ -36,6 +39,7 @@ import com.k4rnaj1k.savebot.entity.User;
 import com.k4rnaj1k.savebot.repository.FileRepository;
 import com.k4rnaj1k.savebot.repository.QueryRepository;
 import com.k4rnaj1k.savebot.repository.UserRepository;
+import com.k4rnaj1k.savebot.service.MangaService;
 import com.k4rnaj1k.savebot.service.VideoService;
 
 import lombok.extern.slf4j.Slf4j;
@@ -44,136 +48,148 @@ import reactor.core.publisher.Flux;
 @Component
 @Slf4j
 public class SaveBotController implements SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
-    private final VideoService videoService;
-    private final WebClient cobaltWebClient;
-    private final TelegramClient telegramClient;
-    private final UserRepository userRepository;
-    private final FileRepository fileRepository;
-    private final QueryRepository queryRepository;
-    private final String botToken;
-    private final String placeholderVideoId;
+  private final VideoService videoService;
+  private final WebClient cobaltWebClient;
+  private final TelegramClient telegramClient;
+  private final UserRepository userRepository;
+  private final FileRepository fileRepository;
+  private final QueryRepository queryRepository;
+  private final String botToken;
+  private final String placeholderVideoId;
+  private final MangaService mangaService;
 
-    public SaveBotController(VideoService videoService, WebClient cobaltWebClient,
-            @Value("${savebot.app.bot-token}") String botToken, UserRepository userRepository,
-            FileRepository fileRepository, QueryRepository queryRepository,
-            @Value("${savebot.app.placeholder-video-id}") String placeholderVideoId) {
-        this.botToken = botToken;
-        telegramClient = new OkHttpTelegramClient(botToken);
-        this.videoService = videoService;
-        this.cobaltWebClient = cobaltWebClient;
-        this.userRepository = userRepository;
-        this.fileRepository = fileRepository;
-        this.queryRepository = queryRepository;
-        this.placeholderVideoId = placeholderVideoId;
+  public SaveBotController(VideoService videoService, WebClient cobaltWebClient,
+      @Value("${savebot.app.bot-token}") String botToken, UserRepository userRepository,
+      FileRepository fileRepository, QueryRepository queryRepository,
+      @Value("${savebot.app.placeholder-video-id}") String placeholderVideoId, MangaService mangaService) {
+    this.botToken = botToken;
+    telegramClient = new OkHttpTelegramClient(botToken);
+    this.videoService = videoService;
+    this.cobaltWebClient = cobaltWebClient;
+    this.userRepository = userRepository;
+    this.fileRepository = fileRepository;
+    this.queryRepository = queryRepository;
+    this.placeholderVideoId = placeholderVideoId;
+    this.mangaService = mangaService;
+  }
+
+  @Override
+  public void consume(Update update) {
+    try {
+      if (update.hasChosenInlineQuery()) {
+        handleChosenInlineQuery(update.getChosenInlineQuery(), update);
+      }
+      if (update.hasInlineQuery()) {
+        handleInlineQuery(update.getInlineQuery());
+      } else {
+        if (update.hasMessage())
+          handleMessage(update.getMessage());
+      }
+    } catch (TelegramApiException | IOException e) {
+      log.error("Telegram exception {}", e.getMessage());
     }
+  }
 
-    @Override
-    public void consume(Update update) {
-        try {
-            if (update.hasChosenInlineQuery()) {
-                handleChosenInlineQuery(update.getChosenInlineQuery(), update);
-            }
-            if (update.hasInlineQuery()) {
-                handleInlineQuery(update.getInlineQuery());
-            } else {
-                if (update.hasMessage())
-                    handleMessage(update.getMessage());
-            }
-        } catch (TelegramApiException e) {
-            log.error("Telegram exception {}", e.getMessage());
-        }
+  private void handleChosenInlineQuery(ChosenInlineQuery chosenInlineQuery, Update update)
+      throws TelegramApiException {
+    InlineQueryRef inlineQueryRef = queryRepository.findById(chosenInlineQuery.getResultId()).orElseThrow();
+    String fileId = uploadVideo(inlineQueryRef.getText());
+    log.info("{}", fileId);
+    InputMedia inputMedia = new InputMediaVideo(fileId);
+    log.info("{}", chosenInlineQuery);
+    log.info("{}", inputMedia);
+    EditMessageMedia editMessageMedia = EditMessageMedia.builder().media(inputMedia)
+        .inlineMessageId(chosenInlineQuery.getInlineMessageId()).build();
+    telegramClient.execute(editMessageMedia);
+  }
+
+  private void handleMessage(Message message) throws TelegramApiException, IOException {
+    if (!userRepository.existsById(message.getFrom().getId())) {
+      User user = User.builder()
+          .userId(message.getFrom().getId())
+          .userName(message.getFrom().getUserName())
+          .build();
+      userRepository.save(user);
     }
-
-    private void handleChosenInlineQuery(ChosenInlineQuery chosenInlineQuery, Update update)
-            throws TelegramApiException {
-        InlineQueryRef inlineQueryRef = queryRepository.findById(chosenInlineQuery.getResultId()).orElseThrow();
-        String fileId = uploadVideo(inlineQueryRef.getText());
-        log.info("{}", fileId);
-        InputMedia inputMedia = new InputMediaVideo(fileId);
-        log.info("{}", chosenInlineQuery);
-        log.info("{}", inputMedia);
-        EditMessageMedia editMessageMedia = EditMessageMedia.builder().media(inputMedia)
-                .inlineMessageId(chosenInlineQuery.getInlineMessageId()).build();
-        telegramClient.execute(editMessageMedia);
+    log.info("Handling message...");
+    if (message.getText().contains("zenko") || message.getText().contains("manga")) {
+      String[] mangaFiles = mangaService.downloadFile(message.getText()).split("\n");
+      for (String mangaFile : mangaFiles) {
+        SendDocument sendDocument = SendDocument.builder().chatId(message.getChatId())
+            .document(new InputFile(new File("result/" + mangaFile)))
+            .build();
+        telegramClient.execute(sendDocument);
+      }
+    } else {
+      String fileId = uploadVideo(message.getText());
+      InputFile inputFile = new InputFile(fileId);
+      SendVideo sendVideo = SendVideo.builder().chatId(message.getChatId()).video(inputFile).build();
+      telegramClient.execute(sendVideo);
     }
+  }
 
-    private void handleMessage(Message message) throws TelegramApiException {
-        if (!userRepository.existsById(message.getFrom().getId())) {
-            User user = User.builder()
-                    .userId(message.getFrom().getId())
-                    .userName(message.getFrom().getUserName())
-                    .build();
-            userRepository.save(user);
-        }
-        log.info("Handling message...");
-        String fileId = uploadVideo(message.getText());
-        InputFile inputFile = new InputFile(fileId);
-        SendVideo sendVideo = SendVideo.builder().chatId(message.getChatId()).video(inputFile).build();
-        telegramClient.execute(sendVideo);
+  private void handleInlineQuery(InlineQuery inlineQuery) throws TelegramApiException {
+    if (!userRepository.existsById(inlineQuery.getFrom().getId())) {
+      User user = User.builder()
+          .userId(inlineQuery.getFrom().getId())
+          .userName(inlineQuery.getFrom().getUserName())
+          .build();
+      userRepository.save(user);
     }
+    String resultId = UUID.randomUUID().toString();
+    InlineKeyboardRow keyboardRow = new InlineKeyboardRow(
+        InlineKeyboardButton.builder().callbackData("Some callback data").text("Перевірити статус").build());
+    InlineKeyboardMarkup inlineKeyboardMarkup = InlineKeyboardMarkup.builder()
+        .keyboardRow(keyboardRow)
+        .build();
+    InlineQueryResultCachedVideo inlineQueryResultCachedPhoto = InlineQueryResultCachedVideo.builder()
+        .id(resultId)
+        .videoFileId(placeholderVideoId)
+        .replyMarkup(inlineKeyboardMarkup)
+        .title("Завантажити відео")
+        .caption("Завантажую відео... А поки можете глянути тікток від ДТЕКу =)")
+        .description("Завантажити відео з ютубу, інстаграму і т.д.")
+        .build();
+    queryRepository.save(InlineQueryRef.builder().text(inlineQuery.getQuery()).inlineQueryId(inlineQuery.getId())
+        .id(resultId).build());
+    AnswerInlineQuery answerInlineQuery = AnswerInlineQuery.builder()
+        .inlineQueryId(inlineQuery.getId())
+        .result(inlineQueryResultCachedPhoto)
+        .build();
 
-    private void handleInlineQuery(InlineQuery inlineQuery) throws TelegramApiException {
-        if (!userRepository.existsById(inlineQuery.getFrom().getId())) {
-            User user = User.builder()
-                    .userId(inlineQuery.getFrom().getId())
-                    .userName(inlineQuery.getFrom().getUserName())
-                    .build();
-            userRepository.save(user);
-        }
-        String resultId = UUID.randomUUID().toString();
-        InlineKeyboardRow keyboardRow = new InlineKeyboardRow(
-                InlineKeyboardButton.builder().callbackData("Some callback data").text("Перевірити статус").build());
-        InlineKeyboardMarkup inlineKeyboardMarkup = InlineKeyboardMarkup.builder()
-                .keyboardRow(keyboardRow)
-                .build();
-        InlineQueryResultCachedVideo inlineQueryResultCachedPhoto = InlineQueryResultCachedVideo.builder()
-                .id(resultId)
-                .videoFileId(placeholderVideoId)
-                .replyMarkup(inlineKeyboardMarkup)
-                .title("Завантажити відео")
-                .caption("Завантажую відео... А поки можете глянути тікток від ДТЕКу =)")
-                .description("Завантажити відео з ютубу, інстаграму і т.д.")
-                .build();
-        queryRepository.save(InlineQueryRef.builder().text(inlineQuery.getQuery()).inlineQueryId(inlineQuery.getId())
-                .id(resultId).build());
-        AnswerInlineQuery answerInlineQuery = AnswerInlineQuery.builder()
-                .inlineQueryId(inlineQuery.getId())
-                .result(inlineQueryResultCachedPhoto)
-                .build();
+    telegramClient.execute(answerInlineQuery);
+  }
 
-        telegramClient.execute(answerInlineQuery);
+  private String uploadVideo(String query) throws TelegramApiException {
+    try {
+      if (fileRepository.existsById(query)) {
+        return fileRepository.findById(query).orElseThrow().getFileId();
+      }
+      URI uri = videoService.getOutputStream(query).getUrl();
+
+      Flux<DataBuffer> videoStream = cobaltWebClient.get().uri(uri).retrieve().bodyToFlux(DataBuffer.class);
+      InputFile videoFile = new InputFile(videoStream.map(b -> b.asInputStream(true))
+          .reduce(SequenceInputStream::new).block(), "downloaded_video.mp4");
+
+      SendVideo sendVideo = SendVideo.builder().chatId("-1002165579960").video(videoFile).caption(uri.toString())
+          .build();
+      String fileId = telegramClient.execute(sendVideo).getVideo().getFileId();
+      fileRepository.save(FileRef.builder().url(query).fileId(fileId).build());
+      return fileId;
+    } catch (BadRequest e) {
+      log.error(e.getResponseBodyAsString());
+      throw new TelegramApiException();
     }
+  }
 
-    private String uploadVideo(String query) throws TelegramApiException {
-        try {
-            if (fileRepository.existsById(query)) {
-                return fileRepository.findById(query).orElseThrow().getFileId();
-            }
-            URI uri = videoService.getOutputStream(query).getUrl();
+  @Override
+  public String getBotToken() {
+    return botToken;
+  }
 
-            Flux<DataBuffer> videoStream = cobaltWebClient.get().uri(uri).retrieve().bodyToFlux(DataBuffer.class);
-            InputFile videoFile = new InputFile(videoStream.map(b -> b.asInputStream(true))
-                    .reduce(SequenceInputStream::new).block(), "downloaded_video.mp4");
-
-            SendVideo sendVideo = SendVideo.builder().chatId("-1002165579960").video(videoFile).caption(uri.toString())
-                    .build();
-            String fileId = telegramClient.execute(sendVideo).getVideo().getFileId();
-            fileRepository.save(FileRef.builder().url(query).fileId(fileId).build());
-            return fileId;
-        } catch (BadRequest e) {
-            log.error(e.getResponseBodyAsString());
-            throw new TelegramApiException();
-        }
-    }
-
-    @Override
-    public String getBotToken() {
-        return botToken;
-    }
-
-    @Override
-    public LongPollingUpdateConsumer getUpdatesConsumer() {
-        return this;
-    }
+  @Override
+  public LongPollingUpdateConsumer getUpdatesConsumer() {
+    return this;
+  }
 
 }

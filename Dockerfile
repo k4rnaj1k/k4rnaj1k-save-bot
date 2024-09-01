@@ -9,5 +9,9 @@ WORKDIR /app
 COPY pom.xml ./
 
 COPY src ./src
-
+COPY scripts ./scripts
+RUN apk add --no-cache python3 py3-virtualenv
+RUN python3 -m venv scripts/venv
+RUN scripts/venv/bin/pip install beautifulsoup4 Pillow requests
+RUN mkdir result temp
 CMD ["mvn", "clean", "spring-boot:run"]
