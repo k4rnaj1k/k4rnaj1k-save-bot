@@ -15,7 +15,7 @@ public class MangaService {
 
   public String downloadFile(String mangaUrl) throws IOException {
     String pythonPath = "python";
-    if (StringUtils.isBlank(System.getenv("PYTHON_PATH"))) {
+    if (StringUtils.isNotBlank(System.getenv("PYTHON_PATH"))) {
       pythonPath = System.getenv("PYTHON_PATH");
     }
     ProcessBuilder processBuilder = new ProcessBuilder(pythonPath, "scripts/get_tome.py",
