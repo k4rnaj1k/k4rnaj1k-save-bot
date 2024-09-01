@@ -14,4 +14,5 @@ RUN apk add --no-cache python3 py3-virtualenv
 RUN python3 -m venv scripts/venv
 RUN scripts/venv/bin/pip install beautifulsoup4 Pillow requests
 RUN mkdir result temp
+ENV PYTHON_PATH=/app/scripts/venv/bin/python3
 CMD ["mvn", "clean", "spring-boot:run"]
