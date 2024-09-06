@@ -20,7 +20,6 @@ import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendVideo;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageMedia;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.ReplyParameters;
@@ -28,8 +27,6 @@ import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.ChosenInlineQuery;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.InlineQuery;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.result.cached.InlineQueryResultCachedVideo;
-import org.telegram.telegrambots.meta.api.objects.media.InputMedia;
-import org.telegram.telegrambots.meta.api.objects.media.InputMediaVideo;
 import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
@@ -131,10 +128,14 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
       Message sentMessage = telegramClient.execute(sendMessage);
 
       String fileId = uploadVideo(message.getText(), chatId, messageId);
+
+      telegramClient.execute(DeleteMessage.builder().chatId(chatId).messageId(sentMessage.getMessageId()).build());
+      if (fileId == "") {
+        return;
+      }
       InputFile inputFile = new InputFile(fileId);
       SendVideo sendVideo = SendVideo.builder().chatId(message.getChatId()).video(inputFile).build();
       telegramClient.execute(sendVideo);
-      telegramClient.execute(DeleteMessage.builder().chatId(chatId).messageId(sentMessage.getMessageId()).build());
     }
   }
 
@@ -157,7 +158,7 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
           .chatId(message.getChatId()).messageId(sent.getMessageId())
           .build();
       telegramClient.execute(deleteMessage);
-    } catch (IOException e) {
+    } catch (Exception e) {
       log.error("Exception happenned while downloading manga: {}", e.getMessage());
       SendMessage errorMessage = SendMessage.builder().chatId(message.getChatId())
           .text("Exception occurred while downloading manga...").build();
@@ -201,22 +202,11 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
 
   private String uploadVideo(String query, Long chatId, Integer messageId)
       throws TelegramApiException {
+    if (fileRepository.existsById(query)) {
+      return fileRepository.findById(query).orElseThrow().getFileId();
+    }
     try {
-      if (fileRepository.existsById(query)) {
-        return fileRepository.findById(query).orElseThrow().getFileId();
-      }
       CobaltResponse cobaltResponse = videoService.getOutputStream(query);
-      if (cobaltResponse.getStatus() == "error") {
-        SendMessage errorMessage = SendMessage.builder()
-            .chatId(chatId)
-            .replyParameters(
-                ReplyParameters.builder().chatId(chatId).messageId(messageId)
-                    .build())
-            .text("Couldn't download video from given link... Error text: %s".formatted(cobaltResponse.getText()))
-            .build();
-        telegramClient.execute(errorMessage);
-        return "";
-      }
       URI uri = cobaltResponse.getUrl();
       Flux<DataBuffer> videoStream = cobaltWebClient.get().uri(uri).retrieve().bodyToFlux(DataBuffer.class);
       InputFile videoFile = new InputFile(videoStream.map(b -> b.asInputStream(true))
@@ -229,7 +219,15 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
       return fileId;
     } catch (BadRequest e) {
       log.error(e.getResponseBodyAsString());
-      throw new TelegramApiException();
+      SendMessage errorMessage = SendMessage.builder()
+          .chatId(chatId)
+          .replyParameters(
+              ReplyParameters.builder().chatId(chatId).messageId(messageId)
+                  .build())
+          .text("Couldn't download video from given link... Error text: %s".formatted(e.getResponseBodyAsString()))
+          .build();
+      telegramClient.execute(errorMessage);
+      return "";
     }
   }
 
