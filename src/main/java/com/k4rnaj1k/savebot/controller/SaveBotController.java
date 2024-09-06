@@ -17,9 +17,13 @@ import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.AnswerInlineQuery;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
+import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendVideo;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageMedia;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
+import org.telegram.telegrambots.meta.api.objects.ReplyParameters;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.ChosenInlineQuery;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.InlineQuery;
@@ -36,6 +40,7 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 import com.k4rnaj1k.savebot.entity.FileRef;
 import com.k4rnaj1k.savebot.entity.InlineQueryRef;
 import com.k4rnaj1k.savebot.entity.User;
+import com.k4rnaj1k.savebot.model.CobaltResponse;
 import com.k4rnaj1k.savebot.repository.FileRepository;
 import com.k4rnaj1k.savebot.repository.QueryRepository;
 import com.k4rnaj1k.savebot.repository.UserRepository;
@@ -93,14 +98,15 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
   private void handleChosenInlineQuery(ChosenInlineQuery chosenInlineQuery, Update update)
       throws TelegramApiException {
     InlineQueryRef inlineQueryRef = queryRepository.findById(chosenInlineQuery.getResultId()).orElseThrow();
-    String fileId = uploadVideo(inlineQueryRef.getText());
-    log.info("{}", fileId);
-    InputMedia inputMedia = new InputMediaVideo(fileId);
-    log.info("{}", chosenInlineQuery);
-    log.info("{}", inputMedia);
-    EditMessageMedia editMessageMedia = EditMessageMedia.builder().media(inputMedia)
+    // String fileId = uploadVideo(inlineQueryRef.getText(),
+    // chosenInlineQuery.getInlineMessageId());
+    // InputMedia inputMedia = new InputMediaVideo(fileId);
+    // EditMessageMedia editMessageMedia =
+    // EditMessageMedia.builder().media(inputMedia)
+    // .inlineMessageId(chosenInlineQuery.getInlineMessageId()).build();
+    EditMessageText editMessageText = EditMessageText.builder().text("Inline mode is temporarily disabled.")
         .inlineMessageId(chosenInlineQuery.getInlineMessageId()).build();
-    telegramClient.execute(editMessageMedia);
+    telegramClient.execute(editMessageText);
   }
 
   private void handleMessage(Message message) throws TelegramApiException, IOException {
@@ -113,6 +119,33 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
     }
     log.info("Handling message...");
     if (message.getText().contains("zenko") || message.getText().contains("manga")) {
+      downloadManga(message);
+    } else {
+      Long chatId = message.getChatId();
+      Integer messageId = message.getMessageId();
+      SendMessage sendMessage = SendMessage.builder()
+          .chatId(message.getChatId())
+          .replyParameters(ReplyParameters.builder().messageId(messageId).chatId(chatId).build())
+          .text("Trying to download video from given link 📼")
+          .build();
+      Message sentMessage = telegramClient.execute(sendMessage);
+
+      String fileId = uploadVideo(message.getText(), chatId, messageId);
+      InputFile inputFile = new InputFile(fileId);
+      SendVideo sendVideo = SendVideo.builder().chatId(message.getChatId()).video(inputFile).build();
+      telegramClient.execute(sendVideo);
+      telegramClient.execute(DeleteMessage.builder().chatId(chatId).messageId(sentMessage.getMessageId()).build());
+    }
+  }
+
+  private void downloadManga(Message message) throws TelegramApiException {
+    SendMessage sendMessage = SendMessage.builder().chatId(message.getChatId())
+        .replyParameters(
+            ReplyParameters.builder()
+                .messageId(message.getMessageId()).chatId(message.getChatId()).build())
+        .text("Downloading manga 📚 from given link...").build();
+    Message sent = telegramClient.execute(sendMessage);
+    try {
       String[] mangaFiles = mangaService.downloadFile(message.getText()).split("\n");
       for (String mangaFile : mangaFiles) {
         SendDocument sendDocument = SendDocument.builder().chatId(message.getChatId())
@@ -120,11 +153,15 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
             .build();
         telegramClient.execute(sendDocument);
       }
-    } else {
-      String fileId = uploadVideo(message.getText());
-      InputFile inputFile = new InputFile(fileId);
-      SendVideo sendVideo = SendVideo.builder().chatId(message.getChatId()).video(inputFile).build();
-      telegramClient.execute(sendVideo);
+      DeleteMessage deleteMessage = DeleteMessage.builder()
+          .chatId(message.getChatId()).messageId(sent.getMessageId())
+          .build();
+      telegramClient.execute(deleteMessage);
+    } catch (IOException e) {
+      log.error("Exception happenned while downloading manga: {}", e.getMessage());
+      SendMessage errorMessage = SendMessage.builder().chatId(message.getChatId())
+          .text("Exception occurred while downloading manga...").build();
+      telegramClient.execute(errorMessage);
     }
   }
 
@@ -138,7 +175,8 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
     }
     String resultId = UUID.randomUUID().toString();
     InlineKeyboardRow keyboardRow = new InlineKeyboardRow(
-        InlineKeyboardButton.builder().callbackData("Some callback data").text("Перевірити статус").build());
+        InlineKeyboardButton.builder()
+            .callbackData("Some callback data").text("Перевірити статус").build());
     InlineKeyboardMarkup inlineKeyboardMarkup = InlineKeyboardMarkup.builder()
         .keyboardRow(keyboardRow)
         .build();
@@ -150,7 +188,8 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
         .caption("Завантажую відео... А поки можете глянути тікток від ДТЕКу =)")
         .description("Завантажити відео з ютубу, інстаграму і т.д.")
         .build();
-    queryRepository.save(InlineQueryRef.builder().text(inlineQuery.getQuery()).inlineQueryId(inlineQuery.getId())
+    queryRepository.save(InlineQueryRef.builder().text(inlineQuery.getQuery())
+        .inlineQueryId(inlineQuery.getId())
         .id(resultId).build());
     AnswerInlineQuery answerInlineQuery = AnswerInlineQuery.builder()
         .inlineQueryId(inlineQuery.getId())
@@ -160,13 +199,25 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
     telegramClient.execute(answerInlineQuery);
   }
 
-  private String uploadVideo(String query) throws TelegramApiException {
+  private String uploadVideo(String query, Long chatId, Integer messageId)
+      throws TelegramApiException {
     try {
       if (fileRepository.existsById(query)) {
         return fileRepository.findById(query).orElseThrow().getFileId();
       }
-      URI uri = videoService.getOutputStream(query).getUrl();
-
+      CobaltResponse cobaltResponse = videoService.getOutputStream(query);
+      if (cobaltResponse.getStatus() == "error") {
+        SendMessage errorMessage = SendMessage.builder()
+            .chatId(chatId)
+            .replyParameters(
+                ReplyParameters.builder().chatId(chatId).messageId(messageId)
+                    .build())
+            .text("Couldn't download video from given link... Error text: %s".formatted(cobaltResponse.getText()))
+            .build();
+        telegramClient.execute(errorMessage);
+        return "";
+      }
+      URI uri = cobaltResponse.getUrl();
       Flux<DataBuffer> videoStream = cobaltWebClient.get().uri(uri).retrieve().bodyToFlux(DataBuffer.class);
       InputFile videoFile = new InputFile(videoStream.map(b -> b.asInputStream(true))
           .reduce(SequenceInputStream::new).block(), "downloaded_video.mp4");
