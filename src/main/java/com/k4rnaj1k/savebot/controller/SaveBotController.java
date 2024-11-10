@@ -4,10 +4,18 @@ import java.io.File;
 import java.io.IOException;
 import java.io.SequenceInputStream;
 import java.net.URI;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.jms.annotation.JmsListener;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException.BadRequest;
@@ -21,6 +29,7 @@ import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendVideo;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
+import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.ReplyParameters;
 import org.telegram.telegrambots.meta.api.objects.Update;
@@ -34,16 +43,25 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.k4rnaj1k.savebot.entity.FileRef;
 import com.k4rnaj1k.savebot.entity.InlineQueryRef;
+import com.k4rnaj1k.savebot.entity.MangaCallback;
+import com.k4rnaj1k.savebot.entity.MangaRequest;
+import com.k4rnaj1k.savebot.entity.MangaRequestId;
 import com.k4rnaj1k.savebot.entity.User;
 import com.k4rnaj1k.savebot.model.CobaltResponse;
+import com.k4rnaj1k.savebot.model.moss.ChapterData;
 import com.k4rnaj1k.savebot.repository.FileRepository;
+import com.k4rnaj1k.savebot.repository.MangaCallbackRepository;
+import com.k4rnaj1k.savebot.repository.MangaRequestRepository;
 import com.k4rnaj1k.savebot.repository.QueryRepository;
 import com.k4rnaj1k.savebot.repository.UserRepository;
 import com.k4rnaj1k.savebot.service.MangaService;
 import com.k4rnaj1k.savebot.service.VideoService;
 
+import jakarta.jms.JMSException;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 
@@ -59,11 +77,17 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
   private final String botToken;
   private final String placeholderVideoId;
   private final MangaService mangaService;
+  private final MangaRequestRepository mangaRequestRepository;
+  private final MangaCallbackRepository mangaCallbackRepository;
+  private final String mangaResultFolder;
 
   public SaveBotController(VideoService videoService, WebClient cobaltWebClient,
       @Value("${savebot.app.bot-token}") String botToken, UserRepository userRepository,
       FileRepository fileRepository, QueryRepository queryRepository,
-      @Value("${savebot.app.placeholder-video-id}") String placeholderVideoId, MangaService mangaService) {
+      @Value("${savebot.app.placeholder-video-id}") String placeholderVideoId, MangaService mangaService,
+      MangaRequestRepository mangaRequestRepository,
+      MangaCallbackRepository mangaCallbackRepository,
+      @Value("${savebot.app.manga-result-folder}") String mangaResultFolder) {
     this.botToken = botToken;
     telegramClient = new OkHttpTelegramClient(botToken);
     this.videoService = videoService;
@@ -73,6 +97,9 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
     this.queryRepository = queryRepository;
     this.placeholderVideoId = placeholderVideoId;
     this.mangaService = mangaService;
+    this.mangaRequestRepository = mangaRequestRepository;
+    this.mangaCallbackRepository = mangaCallbackRepository;
+    this.mangaResultFolder = mangaResultFolder;
   }
 
   @Override
@@ -80,6 +107,10 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
     try {
       if (update.hasChosenInlineQuery()) {
         handleChosenInlineQuery(update.getChosenInlineQuery(), update);
+      }
+      if (update.hasCallbackQuery()) {
+        downloadManga(update.getCallbackQuery());
+        System.out.println(update.getCallbackQuery().getData());
       }
       if (update.hasInlineQuery()) {
         handleInlineQuery(update.getInlineQuery());
@@ -90,6 +121,16 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
     } catch (TelegramApiException | IOException e) {
       log.error("Telegram exception {}", e.getMessage());
     }
+  }
+
+  private void downloadManga(CallbackQuery callbackQuery) {
+    Optional<MangaCallback> byId = mangaCallbackRepository.findById(UUID.fromString(callbackQuery.getData()));
+    System.out.println(callbackQuery.getData());
+    if (byId.isEmpty()) {
+      throw new RuntimeException("Єбать, шось неочікуване.");
+    }
+    MangaCallback callback = byId.get();
+    mangaService.requestDownload(callback.getChapterUrl());
   }
 
   private void handleChosenInlineQuery(ChosenInlineQuery chosenInlineQuery, Update update)
@@ -104,6 +145,38 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
     EditMessageText editMessageText = EditMessageText.builder().text("Inline mode is temporarily disabled.")
         .inlineMessageId(chosenInlineQuery.getInlineMessageId()).build();
     telegramClient.execute(editMessageText);
+  }
+
+  @JmsListener(destination = "tome_list_result")
+  public void receiveMessage(org.apache.activemq.Message message, @Header String request) {
+    // Access the fields from the JSON message
+    try {
+      ObjectMapper objectMapper = new ObjectMapper();
+      ChapterData[] chaptersData = objectMapper.readValue(new String(message.getBody(byte[].class)),
+          ChapterData[].class);
+      sendManga(chaptersData, request);
+    } catch (JMSException | JsonProcessingException e) {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    }
+  }
+
+  @JmsListener(destination = "download_result")
+  public void receiveDownloaded(org.apache.activemq.Message message, @Header String request) {
+    List<MangaCallback> requestCallbacks = mangaCallbackRepository.getAllByChapterUrl(request);
+    ObjectMapper objectMapper = new ObjectMapper();
+    requestCallbacks.forEach(requestCallback -> {
+      try {
+        String downloadedChapterName = objectMapper.readValue(new String(message.getBody(byte[].class)), String.class);
+        SendDocument sendDocument = SendDocument.builder().chatId(requestCallback.getChatId())
+            .document(new InputFile(new File(mangaResultFolder + downloadedChapterName)))
+            .build();
+        telegramClient.execute(sendDocument);
+      } catch (JMSException | TelegramApiException | JsonProcessingException e) {
+        // TODO Auto-generated catch block
+        e.printStackTrace();
+      }
+    });
   }
 
   private void handleMessage(Message message) throws TelegramApiException, IOException {
@@ -139,6 +212,52 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
     }
   }
 
+  public void sendManga(ChapterData[] chapters, String request) {
+
+    List<MangaRequest> requests = mangaRequestRepository.findAllByRequestId_request(request);
+    System.out.println(requests);
+    requests.forEach(mangaRequest -> {
+      List<SendMessage> messagesToSend = new ArrayList<>();
+      Map<String, List<ChapterData>> volumeChapters = new LinkedHashMap<>();
+      for (ChapterData chapter : chapters) {
+        if (volumeChapters.containsKey(chapter.getVolume())) {
+          volumeChapters.get(chapter.getVolume()).add(chapter);
+        } else {
+          volumeChapters.put(chapter.getVolume(), new ArrayList<>(List.of(chapter)));
+        }
+      }
+      volumeChapters.forEach((volume, volChapters) -> {
+        SendMessage volMessage = new SendMessage(String.valueOf(mangaRequest.getRequestId().getChatId()), volume);
+        List<InlineKeyboardRow> keyboardRows = new ArrayList<>();
+        volChapters.forEach(volChapter -> {
+          UUID callbackId = UUID.randomUUID();
+          MangaCallback mangaCallback = new MangaCallback();
+          mangaCallback.setChatId(mangaRequest.getRequestId().getChatId());
+          mangaCallback.setCallbackId(callbackId);
+          mangaCallback.setChapterUrl(volChapter.getChapterUrl());
+          System.out.println("Saving manga callback " + callbackId.toString() + " " + volChapter.getVolume() + " "
+              + volChapter.getChapter());
+          mangaCallbackRepository.save(mangaCallback);
+          keyboardRows.add(new InlineKeyboardRow(
+              InlineKeyboardButton.builder().text(volChapter.getVolume() + " " + volChapter.getChapter())
+                  .callbackData(callbackId.toString()).build()));
+        });
+
+        volMessage.setReplyMarkup(new InlineKeyboardMarkup(keyboardRows));
+        messagesToSend.add(volMessage);
+      });
+      messagesToSend.forEach(t -> {
+        try {
+          telegramClient.execute(t);
+        } catch (TelegramApiException e) {
+          // TODO Auto-generated catch block
+          e.printStackTrace();
+        }
+      });
+    });
+
+  }
+
   private void downloadManga(Message message) throws TelegramApiException {
     SendMessage sendMessage = SendMessage.builder().chatId(message.getChatId())
         .replyParameters(
@@ -147,18 +266,19 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
         .text("Downloading manga 📚 from given link...").build();
     Message sent = telegramClient.execute(sendMessage);
     try {
-      String[] mangaFiles = mangaService.downloadFile(message.getText()).split("\n");
-      for (String mangaFile : mangaFiles) {
-        SendDocument sendDocument = SendDocument.builder().chatId(message.getChatId())
-            .document(new InputFile(new File("result/" + mangaFile)))
-            .build();
-        telegramClient.execute(sendDocument);
-      }
+      // String[] mangaFiles =
+      mangaService.requestMangaList(message.getText());
+      MangaRequest mangaRequest = new MangaRequest();
+      mangaRequest.setDate(Instant.ofEpochSecond(message.getDate()));
+      mangaRequest.setRequestId(new MangaRequestId(message.getChatId(), message.getText()));
+      mangaRequestRepository.save(mangaRequest);
       DeleteMessage deleteMessage = DeleteMessage.builder()
           .chatId(message.getChatId()).messageId(sent.getMessageId())
           .build();
       telegramClient.execute(deleteMessage);
-    } catch (Exception e) {
+    } catch (
+
+    Exception e) {
       log.error("Exception happenned while downloading manga: {}", e.getMessage());
       SendMessage errorMessage = SendMessage.builder().chatId(message.getChatId())
           .text("Exception occurred while downloading manga...").build();

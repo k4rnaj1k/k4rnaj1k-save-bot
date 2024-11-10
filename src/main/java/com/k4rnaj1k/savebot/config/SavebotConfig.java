@@ -7,8 +7,9 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 @Configuration
 public class SavebotConfig {
-    @Bean
-    public WebClient cobaltWebClient(@Value("${savebot.cobalt.api.url}") String cobaltApi) {
-        return WebClient.builder().baseUrl(cobaltApi).build();
-    }
+
+  @Bean
+  public WebClient cobaltWebClient(@Value("${savebot.cobalt.api.url}") String cobaltApi) {
+    return WebClient.builder().baseUrl(cobaltApi).build();
+  }
 }
