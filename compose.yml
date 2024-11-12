@@ -14,6 +14,7 @@ services:
     container_name: bot_mongodb
 
   broker:
+    container_name: bot_amq_broker
     image: apache/activemq-classic:5.18.6
     environment:
       ACTIVEMQ_CONNECTION_USER: ${ACTIVEMQ_CONNECTION_USER:-activemq_user}
