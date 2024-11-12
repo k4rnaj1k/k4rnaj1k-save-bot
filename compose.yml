@@ -11,7 +11,7 @@ services:
  
   mongo:
     image: mongo:6.0
-    container_name: mongodb
+    container_name: bot_mongodb
 
   broker:
     image: apache/activemq-classic:5.18.6
