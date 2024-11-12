@@ -20,6 +20,7 @@ services:
       - "61616:61616"
       - "61613:61613"
       - "8161:8161"
+
   cobalt-api:
     image: ghcr.io/imputnet/cobalt:10
 
