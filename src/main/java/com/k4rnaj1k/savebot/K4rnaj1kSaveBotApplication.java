@@ -6,8 +6,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class K4rnaj1kSaveBotApplication {
 
-    public static void main(String[] args) {
-        SpringApplication.run(K4rnaj1kSaveBotApplication.class, args);
-    }
+  public static void main(String[] args) {
+    SpringApplication.run(K4rnaj1kSaveBotApplication.class, args);
+  }
 
 }
