@@ -81,7 +81,7 @@ public class MangaService {
                 }
             }
             volumeChapters.forEach((volume, volChapters) -> {
-                SendMessage volMessage = new SendMessage(String.valueOf(mangaRequest.getRequestId().getChatId()), volume);
+                SendMessage volMessage = new SendMessage(String.valueOf(mangaRequest.getRequestId().getChatId()), "Том " + volume);
                 List<InlineKeyboardRow> keyboardRows = new ArrayList<>();
                 volChapters.forEach(volChapter -> {
                     UUID callbackId = UUID.randomUUID();
@@ -89,9 +89,10 @@ public class MangaService {
                     mangaCallback.setChatId(mangaRequest.getRequestId().getChatId());
                     mangaCallback.setCallbackId(callbackId);
                     mangaCallback.setChapterUrl(volChapter.getChapterUrl());
-                    System.out.println("Saving manga callback " + callbackId.toString() + " " + volChapter.getVolume() + " " + volChapter.getChapter());
                     mangaCallbackRepository.save(mangaCallback);
-                    keyboardRows.add(new InlineKeyboardRow(InlineKeyboardButton.builder().text(volChapter.getVolume() + " " + volChapter.getChapter()).callbackData(callbackId.toString()).build()));
+                    keyboardRows.add(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("Розділ " + volChapter.getChapter())
+                            .callbackData(callbackId.toString()).build()));
                 });
 
                 volMessage.setReplyMarkup(new InlineKeyboardMarkup(keyboardRows));
@@ -133,19 +134,30 @@ public class MangaService {
     }
 
 
+    private void sendMangaDownloadResult(Long chatId, String downloadedChapterName) {
+        SendDocument sendDocument = SendDocument.builder().chatId(chatId)
+                .document(new InputFile(new File(mangaResultFolder + downloadedChapterName))).build();
+        try {
+            telegramClient.execute(sendDocument);
+        } catch (TelegramApiException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @JmsListener(destination = "download_result")
     public void receiveDownloaded(org.apache.activemq.Message message, @Header String request) {
-        List<MangaCallback> requestCallbacks = mangaCallbackRepository.getAllByChapterUrl(request);
         ObjectMapper objectMapper = new ObjectMapper();
-        requestCallbacks.forEach(requestCallback -> {
-            try {
-                String downloadedChapterName = objectMapper.readValue(new String(message.getBody(byte[].class)), String.class);
-                SendDocument sendDocument = SendDocument.builder().chatId(requestCallback.getChatId()).document(new InputFile(new File(mangaResultFolder + downloadedChapterName))).build();
-                telegramClient.execute(sendDocument);
-            } catch (JMSException | TelegramApiException | JsonProcessingException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
+        try {
+            String downloadedChapterName = objectMapper.readValue(new String(message.getBody(byte[].class)), String.class);
+            List<MangaCallback> requestCallbacks = mangaCallbackRepository.getAllByChapterUrl(request);
+            if(requestCallbacks.isEmpty()) {
+                List<MangaRequest> requests = mangaRequestRepository.findAllByRequestId_request(request);
+                requests.forEach(mangaRequest -> sendMangaDownloadResult(mangaRequest.getRequestId().getChatId(), downloadedChapterName));
             }
-        });
+            requestCallbacks.forEach(requestCallback -> sendMangaDownloadResult(requestCallback.getChatId(), downloadedChapterName));
+        } catch (JsonProcessingException | JMSException e) {
+            throw new RuntimeException(e);
+        }
+
     }
 }

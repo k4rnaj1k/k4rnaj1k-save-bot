@@ -91,7 +91,6 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
 
     private void downloadManga(CallbackQuery callbackQuery) {
         Optional<MangaCallback> byId = mangaCallbackRepository.findById(UUID.fromString(callbackQuery.getData()));
-        System.out.println(callbackQuery.getData());
         if (byId.isEmpty()) {
             throw new RuntimeException("Єбать, шось неочікуване.");
         }
