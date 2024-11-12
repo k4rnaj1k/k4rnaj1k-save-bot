@@ -81,7 +81,7 @@ public class VideoService {
                 .reduce(SequenceInputStream::new).block(), "downloaded_video.mp4");
     }
 
-    private InputFile getInputFileFromPubbler(String query) {
+    private synchronized InputFile getInputFileFromPubbler(String query) {
         var pubblerRequest = new PubblerRequest(query);
         ResponseEntity<PubblerJobCreatedResponse> pubblerJobCreatedEntity = null;
         try {
