@@ -16,8 +16,8 @@ services:
   broker:
     image: apache/activemq-classic:5.18.6
     environment:
-      - ${ACTIVEMQ_CONNECTION_USER:activemq_user}
-      - ${ACTIVEMQ_CONNECTION_PASSWORD:activemq_pass}
+      ACTIVEMQ_CONNECTION_USER: ${ACTIVEMQ_CONNECTION_USER:-activemq_user}
+      ACTIVEMQ_CONNECTION_PASSWORD: ${ACTIVEMQ_CONNECTION_PASSWORD:-activemq_pass}
 
   cobalt-api:
     image: ghcr.io/imputnet/cobalt:10
