@@ -9,6 +9,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.util.Strings;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.io.InputStream;
 import java.io.SequenceInputStream;
 import java.net.URI;
 import java.time.Duration;
@@ -76,9 +78,13 @@ public class VideoService {
     CobaltResponse cobaltResponse = getSteamFromCobalt(query);
     URI uri = cobaltResponse.getUrl();
     Flux<DataBuffer> videoStream = cobaltWebClient.get().uri(uri).retrieve().bodyToFlux(DataBuffer.class);
-
-    return new InputFile(videoStream.map(b -> b.asInputStream(true))
-        .reduce(SequenceInputStream::new).block(), "downloaded_video.mp4");
+    return DataBufferUtils.join(videoStream) // Combine DataBuffers into a single DataBuffer
+        .map(dataBuffer -> {
+          InputStream combinedStream = dataBuffer.asInputStream(true); // Convert to InputStream
+          DataBufferUtils.release(dataBuffer);
+          return new InputFile(combinedStream, "downloaded_video.mp4");
+        })
+        .block();
   }
 
   private synchronized InputFile getInputFileFromPubbler(String query) {
