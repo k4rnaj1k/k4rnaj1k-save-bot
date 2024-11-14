@@ -6,8 +6,9 @@ import lombok.Data;
 @Data
 @AllArgsConstructor
 public class PubblerPayload {
-    private String path;
-    private PubblerType type;
-    private String name;
-    private String source;
+  private String error;
+  private String path;
+  private PubblerType type;
+  private String name;
+  private String source;
 }
