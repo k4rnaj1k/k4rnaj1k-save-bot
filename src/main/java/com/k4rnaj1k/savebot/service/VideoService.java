@@ -81,7 +81,6 @@ public class VideoService {
     return DataBufferUtils.join(videoStream) // Combine DataBuffers into a single DataBuffer
         .map(dataBuffer -> {
           InputStream combinedStream = dataBuffer.asInputStream(true); // Convert to InputStream
-          DataBufferUtils.release(dataBuffer);
           return new InputFile(combinedStream, "downloaded_video.mp4");
         })
         .block();
