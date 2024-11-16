@@ -122,8 +122,11 @@ public class VideoService {
         }
         PubblerJobResponse body = pubblerResponseEntity.getBody();
         if (PubblerJobStatus.COMPLETE.equals(body.getStatus())) {
+          if(Objects.isNull(body.getPayload())) {
+            throw new RuntimeException("No payload for jobId %s query %s".formatted(pubblerJobId, query));
+          }
           if (!StringUtils.isBlank(body.getPayload()[0].getError())) {
-            throw new RuntimeException("Error not blank");
+            throw new RuntimeException("Error not blank %s for query %s".formatted(body.getPayload()[0].getError(), query));
           }
           String path = body.getPayload()[0].getPath();
           Flux<DataBuffer> videoStream = pubblerWebClient.get().uri(path).retrieve().bodyToFlux(DataBuffer.class);
