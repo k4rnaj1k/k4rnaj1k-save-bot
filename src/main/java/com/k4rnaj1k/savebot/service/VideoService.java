@@ -139,6 +139,7 @@ public class VideoService {
         }
       } catch (RuntimeException e) {
         log.error(e.getMessage());
+        throw new RuntimeException(e); //TODO: better error handling
       } catch (InterruptedException e) {
         throw new RuntimeException(e);
       }
