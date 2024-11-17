@@ -8,9 +8,12 @@ import com.k4rnaj1k.savebot.repository.QueryRepository;
 import com.k4rnaj1k.savebot.repository.UserRepository;
 import com.k4rnaj1k.savebot.service.MangaService;
 import com.k4rnaj1k.savebot.service.VideoService;
+import com.k4rnaj1k.savebot.utils.MessageUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsumer;
 import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
@@ -20,6 +23,7 @@ import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendVideo;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageMedia;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.ReplyParameters;
@@ -43,162 +47,176 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.telegram.telegrambots.meta.api.methods.ParseMode.MARKDOWNV2;
+
 @Component
 @Slf4j
 public class SaveBotController implements SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
-  private final VideoService videoService;
-  private final TelegramClient telegramClient;
-  private final UserRepository userRepository;
-  private final QueryRepository queryRepository;
-  private final String botToken;
-  private final MangaService mangaService;
-  private final MangaCallbackRepository mangaCallbackRepository;
+    private final VideoService videoService;
+    private final TelegramClient telegramClient;
+    private final UserRepository userRepository;
+    private final QueryRepository queryRepository;
+    private final String botToken;
+    private final MangaService mangaService;
+    private final MangaCallbackRepository mangaCallbackRepository;
 
-  public SaveBotController(VideoService videoService,
-      @Value("${savebot.app.bot-token}") String botToken, UserRepository userRepository,
-      QueryRepository queryRepository, MangaService mangaService,
-      MangaCallbackRepository mangaCallbackRepository,
-      TelegramClient telegramClient) {
-    this.botToken = botToken;
-    this.telegramClient = telegramClient;
-    this.videoService = videoService;
-    this.userRepository = userRepository;
-    this.queryRepository = queryRepository;
-    this.mangaService = mangaService;
-    this.mangaCallbackRepository = mangaCallbackRepository;
-  }
-
-  @Override
-  public void consume(Update update) {
-    try {
-      if (update.hasChosenInlineQuery()) {
-        handleChosenInlineQuery(update.getChosenInlineQuery(), update);
-      }
-      if (update.hasCallbackQuery()) {
-        downloadManga(update.getCallbackQuery());
-        System.out.println(update.getCallbackQuery().getData());
-      }
-      if (update.hasInlineQuery()) {
-        handleInlineQuery(update.getInlineQuery());
-      } else {
-        if (update.hasMessage())
-          handleMessage(update.getMessage());
-      }
-    } catch (TelegramApiException | IOException e) {
-      log.error("Telegram exception {}", e.getMessage());
+    public SaveBotController(VideoService videoService,
+                             @Value("${savebot.app.bot-token}") String botToken, UserRepository userRepository,
+                             QueryRepository queryRepository, MangaService mangaService,
+                             MangaCallbackRepository mangaCallbackRepository,
+                             TelegramClient telegramClient) {
+        this.botToken = botToken;
+        this.telegramClient = telegramClient;
+        this.videoService = videoService;
+        this.userRepository = userRepository;
+        this.queryRepository = queryRepository;
+        this.mangaService = mangaService;
+        this.mangaCallbackRepository = mangaCallbackRepository;
     }
-  }
 
-  private void downloadManga(CallbackQuery callbackQuery) {
-    Optional<MangaCallback> byId = mangaCallbackRepository.findById(UUID.fromString(callbackQuery.getData()));
-    if (byId.isEmpty()) {
-      throw new RuntimeException("Єбать, шось неочікуване.");
+    @Override
+    public void consume(Update update) {
+        try {
+            if (update.hasChosenInlineQuery()) {
+                handleChosenInlineQuery(update);
+            }
+            if (update.hasCallbackQuery()) {
+                downloadManga(update.getCallbackQuery());
+            }
+            if (update.hasInlineQuery()) {
+                handleInlineQuery(update.getInlineQuery());
+            } else {
+                if (update.hasMessage())
+                    handleMessage(update.getMessage());
+            }
+        } catch (TelegramApiException | IOException e) {
+            log.error("Telegram exception {}", e.getMessage());
+        }
     }
-    MangaCallback callback = byId.get();
-    mangaService.requestDownload(callback.getChapterUrl());
-  }
 
-  private void handleChosenInlineQuery(ChosenInlineQuery chosenInlineQuery, Update update)
-      throws TelegramApiException {
-    InlineQueryRef inlineQueryRef = queryRepository.findById(chosenInlineQuery.getResultId()).orElseThrow();
-    String fileId = videoService.uploadVideo(inlineQueryRef.getText());
-    InputMedia inputMedia = new InputMediaVideo(fileId);
-    EditMessageMedia editMessageMedia = EditMessageMedia.builder().media(inputMedia)
-        .inlineMessageId(chosenInlineQuery.getInlineMessageId()).build();
-    // EditMessageText editMessageText = EditMessageText.builder().text("Inline mode
-    // is temporarily disabled.")
-    // .inlineMessageId(chosenInlineQuery.getInlineMessageId()).build();
-    telegramClient.execute(editMessageMedia);
-  }
-
-  private void handleMessage(Message message) throws TelegramApiException, IOException {
-    if (!userRepository.existsById(message.getFrom().getId())) {
-      User user = User.builder()
-          .userId(message.getFrom().getId())
-          .userName(message.getFrom().getUserName())
-          .build();
-      userRepository.save(user);
+    private void downloadManga(CallbackQuery callbackQuery) {
+        Optional<MangaCallback> byId = mangaCallbackRepository.findById(UUID.fromString(callbackQuery.getData()));
+        if (byId.isEmpty()) {
+            throw new RuntimeException("Єбать, шось неочікуване.");
+        }
+        MangaCallback callback = byId.get();
+        mangaService.requestDownload(callback.getChapterUrl());
     }
-    log.info("Handling message...");
-    if (message.getText().contains("zenko") || message.getText().contains("manga")) {
-      mangaService.downloadManga(message);
-    } else {
-      if (message.getText().equals("/start")) {
-        telegramClient.execute(SendMessage.builder()
-            .text("Вітаю, це бот для завантаження відео та манги за посиланнями." +
-                " Підтримуються багато сервісів з відео. Завантаження фото буде в майбутньому")
-            .chatId(message.getChatId())
-            .build());
-      }
-      String regex = "^(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]";
-      if (!message.getText().matches(regex)) {
-        return;
-      }
-      Long chatId = message.getChatId();
-      Integer messageId = message.getMessageId();
-      SendMessage sendMessage = SendMessage.builder()
-          .chatId(message.getChatId())
-          .replyParameters(ReplyParameters.builder().messageId(messageId).chatId(chatId).build())
-          .text("Trying to download video from given link 📼")
-          .build();
-      Message sentMessage = telegramClient.execute(sendMessage);
 
-      String fileId = videoService.uploadVideo(message.getText(), chatId, messageId);
+    private void handleChosenInlineQuery(Update update)
+            throws TelegramApiException {
+        ChosenInlineQuery chosenInlineQuery = update.getChosenInlineQuery();
+        InlineQueryRef inlineQueryRef = queryRepository.findById(chosenInlineQuery.getResultId()).orElseThrow();
+        try {
+            String fileId = videoService.uploadVideo(inlineQueryRef.getText());
 
-      telegramClient.execute(DeleteMessage.builder().chatId(chatId).messageId(sentMessage.getMessageId()).build());
-      if (Objects.equals(fileId, "")) {
-        return;
-      }
-      InputFile inputFile = new InputFile(fileId);
-      SendVideo sendVideo = SendVideo.builder().chatId(message.getChatId()).video(inputFile).build();
-      telegramClient.execute(sendVideo);
+            InputMedia inputMedia = new InputMediaVideo(fileId);
+
+            telegramClient.execute(MessageUtils.editMessageMedia(inputMedia, chosenInlineQuery.getInlineMessageId()));
+        } catch (WebClientResponseException.BadRequest e) {
+            log.error(e.getResponseBodyAsString());
+            EditMessageText editMessageText = EditMessageText.builder().inlineMessageId(update.getChosenInlineQuery().getInlineMessageId())
+                    .text("Сталася помилка при сробі завантажити файл за посиланням:\n" + inlineQueryRef.getText())
+                    .build();
+
+            telegramClient.execute(editMessageText);
+        }
     }
-  }
 
-  private void handleInlineQuery(InlineQuery inlineQuery) throws TelegramApiException {
-    if (!userRepository.existsById(inlineQuery.getFrom().getId())) {
-      User user = User.builder()
-          .userId(inlineQuery.getFrom().getId())
-          .userName(inlineQuery.getFrom().getUserName())
-          .build();
-      userRepository.save(user);
+    private void handleMessage(Message message) throws TelegramApiException, IOException {
+        if (!userRepository.existsById(message.getFrom().getId())) {
+            User user = User.builder()
+                    .userId(message.getFrom().getId())
+                    .userName(message.getFrom().getUserName())
+                    .build();
+            userRepository.save(user);
+        }
+        //TODO: add logging
+        if (message.getText().contains("zenko") || message.getText().contains("manga")) {
+            mangaService.downloadManga(message);
+        } else {
+            if (message.getText().equals("/start")) {
+                telegramClient.execute(SendMessage.builder()
+                        .text("""
+                                Вітаю, це бот для завантаження відео та манги за посиланнями.
+                                Підтримуються багато сервісів з відео. Завантаження фото буде в майбутньому.
+                                Головна фішка бота - підтримка інлайн режиму, тому працює у будь-якому чаті)
+                                ||напиши назву бота + посилання на відео в будь-якому чаті і повідомлення буде наіслане з відео||
+                                """)
+                        .chatId(message.getChatId())
+                        .parseMode(MARKDOWNV2)
+                        .build());
+            }
+            String regex = "^(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]";
+            if (!message.getText().matches(regex)) {
+                return;
+            }
+            Long chatId = message.getChatId();
+            Integer messageId = message.getMessageId();
+            SendMessage sendMessage = SendMessage.builder()
+                    .chatId(message.getChatId())
+                    .replyParameters(ReplyParameters.builder().messageId(messageId).chatId(chatId).build())
+                    .text("Trying to download video from given link 📼")
+                    .build();
+            Message sentMessage = telegramClient.execute(sendMessage);
+
+            String fileId = videoService.uploadVideo(message.getText());
+
+            telegramClient.execute(MessageUtils.deleteMessage(chatId, sentMessage.getMessageId()));
+
+            if (StringUtils.isBlank(fileId)) {
+                return;
+            }
+            InputFile inputFile = new InputFile(fileId);
+            telegramClient.execute(MessageUtils.sendVideo(message.getChatId(), inputFile));
+        }
     }
-    String resultId = UUID.randomUUID().toString();
-    InlineKeyboardRow keyboardRow = new InlineKeyboardRow(
-        InlineKeyboardButton.builder()
-            .callbackData("Some callback data").text("Перевірити статус").build());
-    InlineKeyboardMarkup inlineKeyboardMarkup = InlineKeyboardMarkup.builder()
-        .keyboardRow(keyboardRow)
-        .build();
-    InputMessageContent inputTextMessageContent = InputTextMessageContent.builder()
-        .messageText("Завантажую відео за [посиланням](" + inlineQuery.getQuery() + ")")
-        .parseMode(ParseMode.MARKDOWNV2)
-        .build();
-    InlineQueryResultArticle inlineQueryResultArticle = InlineQueryResultArticle.builder()
-        .id(resultId)
-        .replyMarkup(inlineKeyboardMarkup)
-        .inputMessageContent(inputTextMessageContent)
-        .title("Завантажити відео з ютубу, інстаграму і т.д.")
-        .build();
-    queryRepository.save(InlineQueryRef.builder().text(inlineQuery.getQuery())
-        .inlineQueryId(inlineQuery.getId())
-        .id(resultId).build());
-    AnswerInlineQuery answerInlineQuery = AnswerInlineQuery.builder()
-        .inlineQueryId(inlineQuery.getId())
-        .result(inlineQueryResultArticle)
-        .build();
 
-    telegramClient.execute(answerInlineQuery);
-  }
+    private void handleInlineQuery(InlineQuery inlineQuery) throws TelegramApiException {
+        if (!userRepository.existsById(inlineQuery.getFrom().getId())) {
+            User user = User.builder()
+                    .userId(inlineQuery.getFrom().getId())
+                    .userName(inlineQuery.getFrom().getUserName())
+                    .build();
+            userRepository.save(user);
+        }
+        String resultId = UUID.randomUUID().toString();
+        InlineKeyboardRow keyboardRow = new InlineKeyboardRow(
+                InlineKeyboardButton.builder()
+                        .callbackData("Some callback data").text("Перевірити статус").build());
+        InlineKeyboardMarkup inlineKeyboardMarkup = InlineKeyboardMarkup.builder()
+                .keyboardRow(keyboardRow)
+                .build();
+        InputMessageContent inputTextMessageContent = InputTextMessageContent.builder()
+                .messageText("Завантажую відео за [посиланням](" + inlineQuery.getQuery() + ")")
+                .parseMode(MARKDOWNV2)
+                .build();
+        InlineQueryResultArticle inlineQueryResultArticle = InlineQueryResultArticle.builder()
+                .id(resultId)
+                .replyMarkup(inlineKeyboardMarkup)
+                .inputMessageContent(inputTextMessageContent)
+                .title("Завантажити відео з ютубу, інстаграму і т.д.")
+                .build();
 
-  @Override
-  public String getBotToken() {
-    return botToken;
-  }
+        queryRepository.save(InlineQueryRef.builder().text(inlineQuery.getQuery())
+                .inlineQueryId(inlineQuery.getId())
+                .id(resultId).build());
+        AnswerInlineQuery answerInlineQuery = AnswerInlineQuery.builder()
+                .inlineQueryId(inlineQuery.getId())
+                .result(inlineQueryResultArticle)
+                .build();
 
-  @Override
-  public LongPollingUpdateConsumer getUpdatesConsumer() {
-    return this;
-  }
+        telegramClient.execute(answerInlineQuery);
+    }
+
+    @Override
+    public String getBotToken() {
+        return botToken;
+    }
+
+    @Override
+    public LongPollingUpdateConsumer getUpdatesConsumer() {
+        return this;
+    }
 
 }

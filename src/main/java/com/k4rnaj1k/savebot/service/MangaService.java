@@ -8,6 +8,7 @@ import com.k4rnaj1k.savebot.entity.MangaRequestId;
 import com.k4rnaj1k.savebot.model.moss.ChapterData;
 import com.k4rnaj1k.savebot.repository.MangaCallbackRepository;
 import com.k4rnaj1k.savebot.repository.MangaRequestRepository;
+import com.k4rnaj1k.savebot.utils.MessageUtils;
 import jakarta.jms.JMSException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -92,7 +93,7 @@ public class MangaService {
                     mangaCallbackRepository.save(mangaCallback);
                     keyboardRows.add(new InlineKeyboardRow(
                             InlineKeyboardButton.builder().text("Розділ " + volChapter.getChapter())
-                            .callbackData(callbackId.toString()).build()));
+                                    .callbackData(callbackId.toString()).build()));
                 });
 
                 volMessage.setReplyMarkup(new InlineKeyboardMarkup(keyboardRows));
@@ -115,30 +116,40 @@ public class MangaService {
     }
 
     public void downloadManga(Message message) throws TelegramApiException {
-        SendMessage sendMessage = SendMessage.builder().chatId(message.getChatId()).replyParameters(ReplyParameters.builder().messageId(message.getMessageId()).chatId(message.getChatId()).build()).text("Downloading manga 📚 from given link...").build();
+        SendMessage sendMessage = SendMessage.builder().chatId(message.getChatId())
+                .replyParameters(ReplyParameters.builder()
+                        .messageId(message.getMessageId()).chatId(message.getChatId()).build())
+                .text("Завантажую том/список томів 📚 за [посиланням](%s)...".formatted(message.getText())).build();
         Message sent = telegramClient.execute(sendMessage);
         try {
-            // String[] mangaFiles =
             requestMangaList(message.getText());
             MangaRequest mangaRequest = new MangaRequest();
             mangaRequest.setDate(Instant.ofEpochSecond(message.getDate()));
             mangaRequest.setRequestId(new MangaRequestId(message.getChatId(), message.getText()));
+            mangaRequest.setMessageId(sent.getMessageId());
             mangaRequestRepository.save(mangaRequest);
-            DeleteMessage deleteMessage = DeleteMessage.builder().chatId(message.getChatId()).messageId(sent.getMessageId()).build();
-            telegramClient.execute(deleteMessage);
         } catch (Exception e) {
             log.error("Exception happened while downloading manga: {}", e.getMessage());
-            SendMessage errorMessage = SendMessage.builder().chatId(message.getChatId()).text("Exception occurred while downloading manga...").build();
+            SendMessage errorMessage = MessageUtils.sendMessage(message.getChatId(), "Exception occurred while trying to download manga.");
+            telegramClient.execute(MessageUtils.deleteMessage(sent.getChatId(), sent.getMessageId()));
             telegramClient.execute(errorMessage);
         }
     }
 
+    private void sendMangaResult(Long chatId, String downloadedChapterName) throws TelegramApiException {
+        telegramClient.execute(MessageUtils.sendManga(mangaResultFolder + downloadedChapterName, chatId));
+    }
 
-    private void sendMangaDownloadResult(Long chatId, String downloadedChapterName) {
-        SendDocument sendDocument = SendDocument.builder().chatId(chatId)
-                .document(new InputFile(new File(mangaResultFolder + downloadedChapterName))).build();
+    private void sendMangaDownloadResult(MangaRequest mangaRequest, String downloadedChapterName) {
         try {
-            telegramClient.execute(sendDocument);
+            Long chatId = mangaRequest.getRequestId().getChatId();
+
+            sendMangaResult(chatId, downloadedChapterName);
+
+            Integer messageId = mangaRequest.getMessageId();
+            if (Objects.nonNull(messageId)) {
+                telegramClient.execute(MessageUtils.deleteMessage(chatId, messageId));
+            }
         } catch (TelegramApiException e) {
             throw new RuntimeException(e);
         }
@@ -150,11 +161,17 @@ public class MangaService {
         try {
             String downloadedChapterName = objectMapper.readValue(new String(message.getBody(byte[].class)), String.class);
             List<MangaCallback> requestCallbacks = mangaCallbackRepository.getAllByChapterUrl(request);
-            if(requestCallbacks.isEmpty()) {
+            if (requestCallbacks.isEmpty()) {
                 List<MangaRequest> requests = mangaRequestRepository.findAllByRequestId_request(request);
-                requests.forEach(mangaRequest -> sendMangaDownloadResult(mangaRequest.getRequestId().getChatId(), downloadedChapterName));
+                requests.forEach(mangaRequest -> sendMangaDownloadResult(mangaRequest, downloadedChapterName));
             }
-            requestCallbacks.forEach(requestCallback -> sendMangaDownloadResult(requestCallback.getChatId(), downloadedChapterName));
+            requestCallbacks.forEach(requestCallback -> {
+                try {
+                    sendMangaResult(requestCallback.getChatId(), downloadedChapterName);
+                } catch (TelegramApiException e) {
+                    throw new RuntimeException(e);
+                }
+            });
         } catch (JsonProcessingException | JMSException e) {
             throw new RuntimeException(e);
         }

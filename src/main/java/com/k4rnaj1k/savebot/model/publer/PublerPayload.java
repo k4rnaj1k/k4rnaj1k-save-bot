@@ -1,14 +1,14 @@
-package com.k4rnaj1k.savebot.model.pubbler;
+package com.k4rnaj1k.savebot.model.publer;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
 @Data
 @AllArgsConstructor
-public class PubblerPayload {
+public class PublerPayload {
   private String error;
   private String path;
-  private PubblerType type;
+  private PublerType type;
   private String name;
   private String source;
 }

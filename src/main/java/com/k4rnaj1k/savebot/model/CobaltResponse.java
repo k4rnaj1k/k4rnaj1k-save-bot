@@ -11,4 +11,5 @@ public class CobaltResponse {
     private URI url;
     private String status;
     private String text;
+    private String fileName;
 }

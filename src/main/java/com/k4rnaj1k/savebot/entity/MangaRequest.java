@@ -12,5 +12,6 @@ import lombok.Setter;
 public class MangaRequest {
   @Id
   private MangaRequestId requestId;
+  private Integer messageId;
   private Instant date;
 }

@@ -1,8 +1,8 @@
-package com.k4rnaj1k.savebot.model.pubbler;
+package com.k4rnaj1k.savebot.model.publer;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-public enum PubblerType {
+public enum PublerType {
     @JsonProperty("video")
     VIDEO
 }

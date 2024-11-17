@@ -7,5 +7,5 @@ import com.k4rnaj1k.savebot.entity.FileRef;
 
 @Repository
 public interface FileRepository extends MongoRepository<FileRef, String> {
-    
+    public FileRef getByUrl(String id);
 }
