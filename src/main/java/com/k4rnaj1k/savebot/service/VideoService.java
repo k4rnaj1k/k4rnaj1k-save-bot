@@ -96,8 +96,10 @@ public class VideoService {
 
   private InputFile downloadVideo(String query) {
     try {
+      log.info("Trying to download from cobalt for query {}", query);
       return getInputFileFromCobalt(query);
     } catch (RuntimeException e) {
+      log.info("Couldn't download \"{}\" from cobalt, falling back to publer.", query);
       return getInputFileFromPubler(query);
     }
   }
