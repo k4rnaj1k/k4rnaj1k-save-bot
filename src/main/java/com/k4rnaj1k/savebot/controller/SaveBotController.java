@@ -18,11 +18,7 @@ import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsume
 import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.AnswerInlineQuery;
-import org.telegram.telegrambots.meta.api.methods.ParseMode;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
-import org.telegram.telegrambots.meta.api.methods.send.SendVideo;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageMedia;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
@@ -43,7 +39,6 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.io.IOException;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -85,8 +80,7 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
             }
             if (update.hasInlineQuery()) {
                 handleInlineQuery(update.getInlineQuery());
-            } else {
-                if (update.hasMessage())
+            } else if (update.hasMessage()) {
                     handleMessage(update.getMessage());
             }
         } catch (TelegramApiException | IOException e) {
@@ -179,6 +173,9 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
                     .userName(inlineQuery.getFrom().getUserName())
                     .build();
             userRepository.save(user);
+        }
+        if(inlineQuery.getQuery().isBlank()) {
+            return;
         }
         String resultId = UUID.randomUUID().toString();
         InlineKeyboardRow keyboardRow = new InlineKeyboardRow(
