@@ -39,6 +39,7 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.io.IOException;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -81,7 +82,7 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
             if (update.hasInlineQuery()) {
                 handleInlineQuery(update.getInlineQuery());
             } else if (update.hasMessage()) {
-                    handleMessage(update.getMessage());
+                handleMessage(update.getMessage());
             }
         } catch (TelegramApiException | IOException e) {
             log.error("Telegram exception {}", e.getMessage());
@@ -147,16 +148,27 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
             }
             Long chatId = message.getChatId();
             Integer messageId = message.getMessageId();
-            SendMessage sendMessage = SendMessage.builder()
-                    .chatId(message.getChatId())
-                    .replyParameters(ReplyParameters.builder().messageId(messageId).chatId(chatId).build())
-                    .text("Trying to download video from given link 📼")
-                    .build();
-            Message sentMessage = telegramClient.execute(sendMessage);
-
-            String fileId = videoService.uploadVideo(message.getText());
-
-            telegramClient.execute(MessageUtils.deleteMessage(chatId, sentMessage.getMessageId()));
+            Message sentMessage = null;
+            if (!message.isGroupMessage()) {
+                SendMessage sendMessage = SendMessage.builder()
+                        .chatId(message.getChatId())
+                        .replyParameters(ReplyParameters.builder().messageId(messageId).chatId(chatId).build())
+                        .text("Намагаюсь завантажити відео за посиланням 📼")
+                        .build();
+                sentMessage = telegramClient.execute(sendMessage);
+            }
+            String fileId = null;
+            try {
+                fileId = videoService.uploadVideo(message.getText());
+            } catch (Exception e) {
+                log.error(e.getMessage());
+                if (!message.isGroupMessage()) {
+                    SendMessage sendMessage = MessageUtils.sendReply(chatId, "Сталася помилка при спробі завантажити відео", messageId);
+                    telegramClient.execute(sendMessage);
+                }
+            }
+            if (Objects.nonNull(sentMessage))
+                telegramClient.execute(MessageUtils.deleteMessage(chatId, sentMessage.getMessageId()));
 
             if (StringUtils.isBlank(fileId)) {
                 return;
@@ -174,7 +186,7 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
                     .build();
             userRepository.save(user);
         }
-        if(inlineQuery.getQuery().isBlank()) {
+        if (inlineQuery.getQuery().isBlank()) {
             return;
         }
         String resultId = UUID.randomUUID().toString();

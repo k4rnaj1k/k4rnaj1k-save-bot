@@ -13,7 +13,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.telegram.telegrambots.meta.api.objects.InputFile;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -28,7 +27,7 @@ public class PublerService {
     public String schedulePublerJob(String query) {
             var publerRequest = new PublerRequest(query);
 
-            var pubblerJobCreatedEntity = pubblerWebClient.post().uri("/hooks/media")
+            var pubblerJobCreatedEntity = pubblerWebClient.post().uri("/tools/media")
                     .header("Referer", "https://publer.io/")
                     .contentType(MediaType.APPLICATION_JSON).body(Mono.just(publerRequest), PublerRequest.class)
                     .accept(MediaType.APPLICATION_JSON)

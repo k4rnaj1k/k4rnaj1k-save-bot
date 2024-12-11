@@ -7,6 +7,7 @@ import org.telegram.telegrambots.meta.api.methods.send.SendVideo;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageMedia;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
+import org.telegram.telegrambots.meta.api.objects.ReplyParameters;
 import org.telegram.telegrambots.meta.api.objects.media.InputMedia;
 
 @UtilityClass
@@ -35,5 +36,9 @@ public class MessageUtils {
 
     public static SendMessage sendMessage(Long chatId, String messageText) {
         return SendMessage.builder().chatId(chatId).text(messageText).build();
+    }
+
+    public static SendMessage sendReply(Long chatId, String messageText, Integer replyToMessage) {
+        return SendMessage.builder().chatId(chatId).text(messageText).replyParameters(ReplyParameters.builder().chatId(chatId).messageId(replyToMessage).build()).build();
     }
 }
