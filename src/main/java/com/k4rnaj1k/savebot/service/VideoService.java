@@ -17,6 +17,7 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 import reactor.core.publisher.Flux;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 
 @Service
@@ -36,7 +37,7 @@ public class VideoService {
         this.channelChatId = channelChatId;
     }
 
-    private InputFile getInputFileFromCobalt(String query) {
+    private InputStream getInputFileFromCobalt(String query) {
         CobaltResponse cobaltResponse = cobaltService.getCobaltResponse(query);
         URI uri = cobaltResponse.getUrl();
 
@@ -81,7 +82,7 @@ public class VideoService {
 //    throw new RuntimeException("File not downloaded in time from publer, it seems.");
 //  }
 
-    private InputFile downloadVideo(String query) {
+    private InputStream downloadVideo(String query) {
 //    try {
         log.info("Trying to download from cobalt for query {}", query);
         return getInputFileFromCobalt(query);
@@ -91,25 +92,36 @@ public class VideoService {
 //    }
     }
 
-    public String uploadVideo(String query)
+    public FileRef uploadVideo(String query)
             throws TelegramApiException {
         if (fileRepository.existsById(query)) {
-            return fileRepository.getByUrl(query).getFileId();
+            return fileRepository.getByUrl(query);
         }
         return uploadVideoToChannel(query);
     }
 
-    private String uploadVideoToChannel(String query) throws TelegramApiException {
-        InputFile videoFile = downloadVideo(query);
+    private FileRef uploadVideoToChannel(String query) throws TelegramApiException {
+        InputStream file = downloadVideo(query);
 
-        Message channelVideoMessage = telegramClient.execute(MessageUtils.sendVideo(channelChatId, videoFile));
-        try {
-            videoFile.getNewMediaStream().close();
-        } catch (IOException e) {
-            log.error("Could not close input stream for query " + query + " file Id " + channelVideoMessage.getVideo().getFileId());
+        String type = InputFileUtils.getType(file);
+        InputFile inputFile = new InputFile(file, InputFileUtils.getFileName(file));
+        String fileId = null;
+        Message sendMediaMessage;
+        if(type.startsWith("video")) {
+            sendMediaMessage = telegramClient.execute(MessageUtils.sendVideo(channelChatId, inputFile));
+            fileId = sendMediaMessage.getVideo().getFileId();
         }
-        String fileId = channelVideoMessage.getVideo().getFileId();
-        fileRepository.save(new FileRef(query, fileId));
-        return fileId;
+        if(type.startsWith("image")) {
+            sendMediaMessage = telegramClient.execute(MessageUtils.sendPhoto(channelChatId, inputFile));
+            fileId = sendMediaMessage.getPhoto().get(0).getFileId();
+        }
+        try {
+            inputFile.getNewMediaStream().close();
+        } catch (IOException e) {
+            log.error("Could not close input stream for query " + query + " file Id " + fileId);
+        }
+        FileRef entity = new FileRef(query, fileId, type);
+        fileRepository.save(entity);
+        return entity;
     }
 }

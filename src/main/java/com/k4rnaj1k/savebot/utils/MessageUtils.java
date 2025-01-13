@@ -3,6 +3,7 @@ package com.k4rnaj1k.savebot.utils;
 import lombok.experimental.UtilityClass;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.methods.send.SendVideo;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageMedia;
@@ -12,6 +13,14 @@ import org.telegram.telegrambots.meta.api.objects.media.InputMedia;
 
 @UtilityClass
 public class MessageUtils {
+    public static SendPhoto sendPhoto(String chatId, InputFile photo) {
+        return SendPhoto.builder().chatId(chatId).photo(photo).build();
+    }
+
+    public static SendPhoto sendPhoto(Long chatId, InputFile photo) {
+        return SendPhoto.builder().chatId(chatId).photo(photo).build();
+    }
+
     public static SendVideo sendVideo(String chatId, InputFile video) {
         return SendVideo.builder().chatId(chatId).video(video).build();
     }

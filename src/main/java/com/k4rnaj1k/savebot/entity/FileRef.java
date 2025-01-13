@@ -12,4 +12,5 @@ public class FileRef {
     @Id
     private String url;
     private String fileId;
+    private String mimeType;
 }

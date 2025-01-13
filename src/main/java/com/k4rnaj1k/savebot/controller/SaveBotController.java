@@ -1,5 +1,6 @@
 package com.k4rnaj1k.savebot.controller;
 
+import com.k4rnaj1k.savebot.entity.FileRef;
 import com.k4rnaj1k.savebot.entity.InlineQueryRef;
 import com.k4rnaj1k.savebot.entity.MangaCallback;
 import com.k4rnaj1k.savebot.entity.User;
@@ -9,8 +10,8 @@ import com.k4rnaj1k.savebot.repository.UserRepository;
 import com.k4rnaj1k.savebot.service.MangaService;
 import com.k4rnaj1k.savebot.service.VideoService;
 import com.k4rnaj1k.savebot.utils.MessageUtils;
+import com.k4rnaj1k.savebot.utils.UrlUtils;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
@@ -30,6 +31,7 @@ import org.telegram.telegrambots.meta.api.objects.inlinequery.inputmessageconten
 import org.telegram.telegrambots.meta.api.objects.inlinequery.inputmessagecontent.InputTextMessageContent;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.result.InlineQueryResultArticle;
 import org.telegram.telegrambots.meta.api.objects.media.InputMedia;
+import org.telegram.telegrambots.meta.api.objects.media.InputMediaPhoto;
 import org.telegram.telegrambots.meta.api.objects.media.InputMediaVideo;
 import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
@@ -103,9 +105,10 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
         ChosenInlineQuery chosenInlineQuery = update.getChosenInlineQuery();
         InlineQueryRef inlineQueryRef = queryRepository.findById(chosenInlineQuery.getResultId()).orElseThrow();
         try {
-            String fileId = videoService.uploadVideo(inlineQueryRef.getText());
+            FileRef file = videoService.uploadVideo(inlineQueryRef.getText());
 
-            InputMedia inputMedia = new InputMediaVideo(fileId);
+            String fileId = file.getFileId();
+            InputMedia inputMedia = file.getMimeType() != null && file.getMimeType().startsWith("image") ? new InputMediaPhoto(fileId) : new InputMediaVideo(fileId);
 
             telegramClient.execute(MessageUtils.editMessageMedia(inputMedia, chosenInlineQuery.getInlineMessageId()));
         } catch (WebClientResponseException.BadRequest e) {
@@ -157,9 +160,9 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
                         .build();
                 sentMessage = telegramClient.execute(sendMessage);
             }
-            String fileId = null;
+            FileRef file = null;
             try {
-                fileId = videoService.uploadVideo(message.getText());
+                file = videoService.uploadVideo(message.getText());
             } catch (Exception e) {
                 log.error(e.getMessage());
                 if (!message.isGroupMessage()) {
@@ -170,11 +173,15 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
             if (Objects.nonNull(sentMessage))
                 telegramClient.execute(MessageUtils.deleteMessage(chatId, sentMessage.getMessageId()));
 
-            if (StringUtils.isBlank(fileId)) {
+            if (file == null) {
                 return;
             }
-            InputFile inputFile = new InputFile(fileId);
-            telegramClient.execute(MessageUtils.sendVideo(message.getChatId(), inputFile));
+            InputFile inputFile = new InputFile(file.getFileId());
+            if (file.getMimeType() != null && file.getMimeType().startsWith("image")) {
+                telegramClient.execute(MessageUtils.sendPhoto(chatId, inputFile));
+            } else {
+                telegramClient.execute(MessageUtils.sendVideo(message.getChatId(), inputFile));
+            }
         }
     }
 
@@ -187,6 +194,9 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
             userRepository.save(user);
         }
         if (inlineQuery.getQuery().isBlank()) {
+            return;
+        }
+        if (!UrlUtils.isUrl(inlineQuery.getQuery())) {
             return;
         }
         String resultId = UUID.randomUUID().toString();
@@ -204,7 +214,7 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
                 .id(resultId)
                 .replyMarkup(inlineKeyboardMarkup)
                 .inputMessageContent(inputTextMessageContent)
-                .title("Завантажити відео з ютубу, інстаграму і т.д.")
+                .title("Завантажити фото/відео з ютубу, інстаграму і т.д.")
                 .build();
 
         queryRepository.save(InlineQueryRef.builder().text(inlineQuery.getQuery())
