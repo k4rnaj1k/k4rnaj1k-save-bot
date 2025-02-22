@@ -87,11 +87,12 @@ public class VideoService {
         String type = InputFileUtils.getType(file);
         String fileName = InputFileUtils.getFileName(file, query);
         if (fileName.contains(".qt")) {
-            try {
-                file = addPreview(file);
-            } catch (IOException e) {
-                log.error(e.getMessage(), e);
-            }
+            //TODO: fix previews
+//            try {
+//                file = addPreview(file);
+//            } catch (IOException e) {
+//                log.error(e.getMessage(), e);
+//            }
         }
 
         InputFile inputFile = new InputFile(file, fileName);
