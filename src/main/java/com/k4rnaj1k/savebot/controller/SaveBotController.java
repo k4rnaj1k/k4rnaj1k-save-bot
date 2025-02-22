@@ -4,6 +4,7 @@ import com.k4rnaj1k.savebot.entity.FileRef;
 import com.k4rnaj1k.savebot.entity.InlineQueryRef;
 import com.k4rnaj1k.savebot.entity.MangaCallback;
 import com.k4rnaj1k.savebot.entity.User;
+import com.k4rnaj1k.savebot.handler.MessageHandler;
 import com.k4rnaj1k.savebot.repository.MangaCallbackRepository;
 import com.k4rnaj1k.savebot.repository.QueryRepository;
 import com.k4rnaj1k.savebot.repository.UserRepository;
@@ -19,11 +20,8 @@ import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsume
 import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.AnswerInlineQuery;
-import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
-import org.telegram.telegrambots.meta.api.objects.InputFile;
-import org.telegram.telegrambots.meta.api.objects.ReplyParameters;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.ChosenInlineQuery;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.InlineQuery;
@@ -33,7 +31,6 @@ import org.telegram.telegrambots.meta.api.objects.inlinequery.result.InlineQuery
 import org.telegram.telegrambots.meta.api.objects.media.InputMedia;
 import org.telegram.telegrambots.meta.api.objects.media.InputMediaPhoto;
 import org.telegram.telegrambots.meta.api.objects.media.InputMediaVideo;
-import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
@@ -41,7 +38,6 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.io.IOException;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -57,12 +53,14 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
     private final String botToken;
     private final MangaService mangaService;
     private final MangaCallbackRepository mangaCallbackRepository;
+    private final MessageHandler messageHandler;
 
     public SaveBotController(VideoService videoService,
                              @Value("${savebot.app.bot-token}") String botToken, UserRepository userRepository,
                              QueryRepository queryRepository, MangaService mangaService,
                              MangaCallbackRepository mangaCallbackRepository,
-                             TelegramClient telegramClient) {
+                             TelegramClient telegramClient,
+                             MessageHandler messageHandler) {
         this.botToken = botToken;
         this.telegramClient = telegramClient;
         this.videoService = videoService;
@@ -70,6 +68,7 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
         this.queryRepository = queryRepository;
         this.mangaService = mangaService;
         this.mangaCallbackRepository = mangaCallbackRepository;
+        this.messageHandler = messageHandler;
     }
 
     @Override
@@ -84,7 +83,7 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
             if (update.hasInlineQuery()) {
                 handleInlineQuery(update.getInlineQuery());
             } else if (update.hasMessage()) {
-                handleMessage(update.getMessage());
+                messageHandler.handleMessage(update.getMessage());
             }
         } catch (TelegramApiException | IOException e) {
             log.error("Telegram exception {}", e.getMessage());
@@ -121,69 +120,6 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
         }
     }
 
-    private void handleMessage(Message message) throws TelegramApiException, IOException {
-        if (!userRepository.existsById(message.getFrom().getId())) {
-            User user = User.builder()
-                    .userId(message.getFrom().getId())
-                    .userName(message.getFrom().getUserName())
-                    .build();
-            userRepository.save(user);
-        }
-        //TODO: add logging
-        if (message.getText().contains("zenko") || message.getText().contains("manga")) {
-            mangaService.downloadManga(message);
-        } else {
-            if (message.getText().equals("/start")) {
-                telegramClient.execute(SendMessage.builder()
-                        .text("""
-                                Вітаю, це бот для завантаження відео та манги за посиланнями.
-                                Підтримуються багато сервісів з відео. Завантаження фото буде в майбутньому.
-                                Головна фішка бота - підтримка інлайн режиму, тому працює у будь-якому чаті)
-                                ||напиши назву бота + посилання на відео в будь-якому чаті і повідомлення буде наіслане з відео||
-                                """)
-                        .chatId(message.getChatId())
-                        .parseMode(MARKDOWNV2)
-                        .build());
-            }
-            String regex = "^(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]";
-            if (!message.getText().matches(regex)) {
-                return;
-            }
-            Long chatId = message.getChatId();
-            Integer messageId = message.getMessageId();
-            Message sentMessage = null;
-            if (!message.isGroupMessage()) {
-                SendMessage sendMessage = SendMessage.builder()
-                        .chatId(message.getChatId())
-                        .replyParameters(ReplyParameters.builder().messageId(messageId).chatId(chatId).build())
-                        .text("Намагаюсь завантажити відео за посиланням 📼")
-                        .build();
-                sentMessage = telegramClient.execute(sendMessage);
-            }
-            FileRef file = null;
-            try {
-                file = videoService.uploadVideo(message.getText());
-            } catch (Exception e) {
-                log.error(e.getMessage());
-                if (!message.isGroupMessage()) {
-                    SendMessage sendMessage = MessageUtils.sendReply(chatId, "Сталася помилка при спробі завантажити відео", messageId);
-                    telegramClient.execute(sendMessage);
-                }
-            }
-            if (Objects.nonNull(sentMessage))
-                telegramClient.execute(MessageUtils.deleteMessage(chatId, sentMessage.getMessageId()));
-
-            if (file == null) {
-                return;
-            }
-            InputFile inputFile = new InputFile(file.getFileId());
-            if (file.getMimeType() != null && file.getMimeType().startsWith("image")) {
-                telegramClient.execute(MessageUtils.sendPhoto(chatId, inputFile));
-            } else {
-                telegramClient.execute(MessageUtils.sendVideo(message.getChatId(), inputFile));
-            }
-        }
-    }
 
     private void handleInlineQuery(InlineQuery inlineQuery) throws TelegramApiException {
         if (!userRepository.existsById(inlineQuery.getFrom().getId())) {
