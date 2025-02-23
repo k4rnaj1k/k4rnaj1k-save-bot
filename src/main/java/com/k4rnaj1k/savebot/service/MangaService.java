@@ -16,10 +16,8 @@ import org.springframework.jms.annotation.JmsListener;
 import org.springframework.jms.core.JmsTemplate;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Service;
-import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
+import org.telegram.telegrambots.meta.api.methods.ParseMode;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
-import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.ReplyParameters;
 import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
@@ -28,7 +26,6 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
-import java.io.File;
 import java.time.Instant;
 import java.util.*;
 
@@ -119,7 +116,8 @@ public class MangaService {
         SendMessage sendMessage = SendMessage.builder().chatId(message.getChatId())
                 .replyParameters(ReplyParameters.builder()
                         .messageId(message.getMessageId()).chatId(message.getChatId()).build())
-                .text("Завантажую том/список томів 📚 за [посиланням](%s)...".formatted(message.getText())).build();
+                .parseMode(ParseMode.MARKDOWNV2)
+                .text("Завантажую том/список томів 📚 за [посиланням](%s)".formatted(message.getText())).build();
         Message sent = telegramClient.execute(sendMessage);
         try {
             requestMangaList(message.getText());
