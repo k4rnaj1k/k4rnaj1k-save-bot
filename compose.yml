@@ -4,6 +4,7 @@ services:
     container_name: downloader_bot
     depends_on:
       - mongo
+      - broker
     environment:
       SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/mydatabase
     extra_hosts:
@@ -14,7 +15,7 @@ services:
     container_name: bot_mongodb
 
   broker:
-    container_name: bot_amq_broker
+    container_name: botbroker
     image: apache/activemq-classic:5.18.6
     environment:
       ACTIVEMQ_CONNECTION_USER: ${ACTIVEMQ_CONNECTION_USER:-activemq_user}
@@ -56,3 +57,6 @@ services:
     command: --cleanup --scope cobalt --interval 900 --include-restarting
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+
+  bgutilprovider:
+    image: brainicism/bgutil-ytdlp-pot-provider

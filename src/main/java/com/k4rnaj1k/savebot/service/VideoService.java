@@ -86,14 +86,6 @@ public class VideoService {
 
         String type = InputFileUtils.getType(file);
         String fileName = InputFileUtils.getFileName(file, query);
-        if (fileName.contains(".qt")) {
-            //TODO: fix previews
-//            try {
-//                file = addPreview(file);
-//            } catch (IOException e) {
-//                log.error(e.getMessage(), e);
-//            }
-        }
 
         InputFile inputFile = new InputFile(file, fileName);
 
@@ -143,7 +135,7 @@ public class VideoService {
         return result;
     }
 
-    public static InputStream convert(InputStream input) throws IOException, InterruptedException {
+    public static InputStream convert(InputStream input) throws IOException {
         Path webmTempFile = Files.createTempFile("input", ".webm");
         try {
             // Write the WebM InputStream to the temporary file
@@ -164,6 +156,27 @@ public class VideoService {
         } catch (IOException e) {
             // Ensure the temporary file is deleted if an error occurs
             Files.deleteIfExists(webmTempFile);
+            throw e;
+        }
+    }
+
+    public static String getAspectRatio(InputStream inputStream) throws IOException {
+        Path videoTempFile = Files.createTempFile("input", "");
+        try {
+            Files.copy(inputStream, videoTempFile, StandardCopyOption.REPLACE_EXISTING);
+            String heightWidthJson;
+            try(InputStream result = ProcessUtils.runCommand("ffprobe",
+                    "-v", "error",
+                    "-select_streams", "v",
+                    "-show_entries", "stream=width,height",
+                    "-of", "json",
+                    videoTempFile.toString())) {
+                heightWidthJson = new String(result.readAllBytes());
+            }
+            Files.deleteIfExists(videoTempFile);
+            return heightWidthJson;
+        } catch(IOException e) {
+            Files.deleteIfExists(videoTempFile);
             throw e;
         }
     }

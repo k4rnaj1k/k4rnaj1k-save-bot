@@ -23,6 +23,10 @@ FROM alpine:3.18 AS ytdlp
 RUN wget -O /usr/local/bin/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp" && \
     chmod +x /usr/local/bin/yt-dlp
 
+RUN mkdir /tmp/plugins
+RUN wget -O /tmp/plugins/yt-dlp-get-pot.zip "https://github.com/coletdjnz/yt-dlp-get-pot/releases/latest/download/yt-dlp-get-pot.zip"
+RUN wget -O /tmp/plugins/bgutil-ytdlp-pot-provider.zip  "https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/latest/download/bgutil-ytdlp-pot-provider.zip "
+
 # ------------------------------
 # Stage 3: Minimal runtime image with Python
 # ------------------------------
@@ -42,6 +46,7 @@ COPY --from=build /app/target/*.jar app.jar
 
 # Copy the yt-dlp binary from the ytdlp stage
 COPY --from=ytdlp /usr/local/bin/yt-dlp /usr/local/bin/yt-dlp
+COPY --from=ytdlp /tmp/plugins /etc/yt-dlp/plugins
 
 # Run the Spring Boot application
 CMD ["java", "-jar", "app.jar"]

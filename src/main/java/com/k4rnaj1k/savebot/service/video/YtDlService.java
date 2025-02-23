@@ -16,6 +16,7 @@ public class YtDlService {
         return ProcessUtils.runCommand(
                 "yt-dlp",
                 "-f", "b[filesize<50M] / w", // Try 360p, else best available
+                "--extractor-args", "youtube:getpot_bgutil_baseurl=http://bgutilprovider:8080",
                 "-o", "-",   // Output to stdout
                 url
         );
@@ -25,6 +26,7 @@ public class YtDlService {
         //yt-dlp --get-filename -o "%(ext)s" <VIDEO_URL
         try (InputStream result = ProcessUtils.runCommand("yt-dlp",
                 "--get-filename",
+                "--extractor-args", "youtube:getpot_bgutil_baseurl=http://bgutilprovider:8080",
                 "-o", "%(ext)s",
                 query)) {
             return new String(result.readAllBytes(), StandardCharsets.UTF_8);
@@ -32,7 +34,6 @@ public class YtDlService {
             log.error(e.getMessage(), e);
             throw new RuntimeException(e);
         }
-
     }
 }
 
