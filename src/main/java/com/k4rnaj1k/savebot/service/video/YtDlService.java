@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Paths;
 
 @Service
 @Slf4j
@@ -17,6 +18,7 @@ public class YtDlService {
                 "yt-dlp",
                 "-f", "b[filesize<50M] / w", // Try 360p, else best available
                 "--extractor-args", "youtube:getpot_bgutil_baseurl=http://bgutilprovider:8080",
+                "--cookies", Paths.get("cookies.txt").toString(),
                 "-o", "-",   // Output to stdout
                 url
         );
@@ -27,6 +29,7 @@ public class YtDlService {
         try (InputStream result = ProcessUtils.runCommand("yt-dlp",
                 "--get-filename",
                 "--extractor-args", "youtube:getpot_bgutil_baseurl=http://bgutilprovider:8080",
+                "--cookies", Paths.get("cookies.txt").toString(),
                 "-o", "%(ext)s",
                 query)) {
             return new String(result.readAllBytes(), StandardCharsets.UTF_8);

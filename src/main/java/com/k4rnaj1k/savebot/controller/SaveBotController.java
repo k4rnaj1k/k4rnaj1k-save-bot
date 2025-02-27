@@ -113,7 +113,7 @@ public class SaveBotController implements SpringLongPollingBot, LongPollingSingl
         } catch (WebClientResponseException.BadRequest e) {
             log.error(e.getResponseBodyAsString());
             EditMessageText editMessageText = EditMessageText.builder().inlineMessageId(update.getChosenInlineQuery().getInlineMessageId())
-                    .text("Сталася помилка при сробі завантажити файл за посиланням:\n" + inlineQueryRef.getText())
+                    .text("Сталася помилка при спробі завантажити файл за посиланням:\n" + inlineQueryRef.getText())
                     .build();
 
             telegramClient.execute(editMessageText);
