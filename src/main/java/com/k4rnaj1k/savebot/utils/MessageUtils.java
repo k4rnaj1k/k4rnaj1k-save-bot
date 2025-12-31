@@ -15,6 +15,7 @@ import org.telegram.telegrambots.meta.api.objects.media.InputMedia;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.regex.Matcher;
@@ -80,7 +81,8 @@ public class MessageUtils {
     }
 
     public static SendDocument sendManga(String fileName, Long chatId) {
-        InputFile inputFile = new InputFile(fileName);
+        File file = new File(fileName);
+        InputFile inputFile = new InputFile(file, fileName);
         return SendDocument.builder().document(inputFile).chatId(chatId).build();
     }
 
